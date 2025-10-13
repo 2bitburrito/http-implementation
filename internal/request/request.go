@@ -8,10 +8,13 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"github.com/2bitburrito/http-implementation/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	State       RequestState
 	Body        *[]byte
 }
@@ -20,6 +23,7 @@ type RequestState int
 
 const (
 	requestStateInitialised RequestState = iota
+	requestParsingHeaders
 	requestStateDone
 )
 
@@ -36,7 +40,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	currReadIdx := 0
 
 	req := &Request{
-		State: requestStateInitialised,
+		State:   requestStateInitialised,
+		Headers: headers.NewHeaders(),
 	}
 
 	for req.State != requestStateDone {
@@ -75,19 +80,33 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	if r.State != requestStateInitialised {
+	switch r.State {
+	case requestStateInitialised:
+		req, n, err := parseRequestLine(data)
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, nil
+		}
+		r.RequestLine = *req
+		r.State = requestParsingHeaders
+		return len(data), nil
+	case requestParsingHeaders:
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, nil
+		}
+		if done {
+			r.State = requestStateDone
+		}
+		return n, nil
+	default:
 		return 0, fmt.Errorf("error: trying to read data in an invalid state")
 	}
-	req, n, err := parseRequestLine(data)
-	if err != nil {
-		return 0, err
-	}
-	if n == 0 {
-		return 0, nil
-	}
-	r.RequestLine = *req
-	r.State = requestStateDone
-	return len(data), nil
 }
 
 func parseRequestLine(data []byte) (*RequestLine, int, error) {
