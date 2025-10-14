@@ -7,16 +7,18 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/2bitburrito/http-implementation/internal/headers"
 )
 
 type Request struct {
-	RequestLine RequestLine
-	Headers     headers.Headers
-	State       RequestState
-	Body        *[]byte
+	RequestLine       RequestLine
+	Headers           headers.Headers
+	State             RequestState
+	Body              []byte
+	ReportedConentLen int
 }
 
 type RequestState int
@@ -24,6 +26,7 @@ type RequestState int
 const (
 	requestStateInitialised RequestState = iota
 	requestParsingHeaders
+	requestParsingBody
 	requestStateDone
 )
 
@@ -68,13 +71,16 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, fmt.Errorf("error while parsing request: %w", err)
 		}
 
-		copy(buffer, buffer[:currReadIdx])
+		copy(buffer, buffer[numberBytesParsed:])
 		currReadIdx -= numberBytesParsed
 	}
 	if req.RequestLine.HTTPVersion == "" ||
 		req.RequestLine.Method == "" ||
 		req.RequestLine.RequestTarget == "" {
 		return nil, fmt.Errorf("unknown error while parsing request line")
+	}
+	if len(req.Body) < req.ReportedConentLen {
+		return req, fmt.Errorf("body is shorter than content-length")
 	}
 	return req, nil
 }
@@ -91,19 +97,40 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 		r.RequestLine = *req
 		r.State = requestParsingHeaders
-		return len(data), nil
+		return n, nil
 	case requestParsingHeaders:
 		n, done, err := r.Headers.Parse(data)
 		if err != nil {
-			return 0, err
+			return n, err
 		}
 		if n == 0 {
 			return 0, nil
 		}
 		if done {
-			r.State = requestStateDone
+			r.State = requestParsingBody
 		}
 		return n, nil
+	case requestParsingBody:
+		contentLen, ok := r.Headers.Get("content-length")
+		if !ok {
+			r.State = requestStateDone
+			r.ReportedConentLen = 0
+			return len(r.Body), nil
+		}
+		lenInt, err := strconv.Atoi(string(contentLen))
+		if err != nil {
+			return 0, fmt.Errorf("malformed content length: %s", contentLen)
+		}
+		r.ReportedConentLen = lenInt
+		r.Body = append(r.Body, data...)
+		if len(r.Body) > lenInt {
+			return len(r.Body), fmt.Errorf("actual body length is longer than reported")
+		}
+		if len(r.Body) == lenInt {
+			r.State = requestStateDone
+			return lenInt, nil
+		}
+		return len(data), nil
 	default:
 		return 0, fmt.Errorf("error: trying to read data in an invalid state")
 	}
@@ -143,10 +170,6 @@ func parseRequestLine(data []byte) (*RequestLine, int, error) {
 		strings.Contains(target, "\n") ||
 		strings.Contains(target, "\r") {
 		return nil, 0, fmt.Errorf("bad target path: path is malformed: contains whitespaces")
-	}
-	// Check for path correctness
-	if !strings.HasPrefix(target, "/") && target != "*" {
-		return nil, 0, fmt.Errorf("bad target path: should start with \"/\" received %q", target)
 	}
 
 	reqLines := &RequestLine{

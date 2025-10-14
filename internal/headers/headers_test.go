@@ -68,4 +68,22 @@ func TestParse(t *testing.T) {
 	assert.Equal(t, 13, n)
 	assert.False(t, done)
 	assert.Equal(t, "Mike, Barry", headers["name"])
+
+	// Test: Headers including user-agent
+	headers = NewHeaders()
+	data = []byte("User-agent: curl/7.81.0\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, 25, n)
+	assert.False(t, done)
+	assert.Equal(t, "curl/7.81.0", headers["user-agent"])
+
+	// Test: Headers including accept headers
+	headers = NewHeaders()
+	data = []byte("Accept: /*/*\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, 14, n)
+	assert.False(t, done)
+	assert.Equal(t, "/*/*", headers["accept"])
 }

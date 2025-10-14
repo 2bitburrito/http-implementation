@@ -13,8 +13,14 @@ func NewHeaders() Headers {
 	return Headers{}
 }
 
+func (h Headers) Get(key string) (string, bool) {
+	keyLower := strings.ToLower(key)
+	val, ok := h[keyLower]
+	return val, ok
+}
+
 // Parse will parse a byte array header and
-// return: the number of bytes read and a done bool
+// return the number of bytes read and a done bool
 func (h Headers) Parse(data []byte) (int, bool, error) {
 	idx := bytes.Index(data, []byte("\r\n"))
 	if idx == -1 {
@@ -28,7 +34,6 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 	if hdrSplitIdx == -1 || hdrSplitIdx == 0 {
 		return 0, false, fmt.Errorf("no valid \":\" found in header line: %v", headerString)
 	}
-	fmt.Println("current hdrSrng: ", headerString)
 	if string(headerString[hdrSplitIdx-1]) == " " {
 		return 0, false, fmt.Errorf("can't have any whitespace before \":\" value")
 	}
