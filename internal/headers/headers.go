@@ -50,10 +50,15 @@ func (h Headers) Parse(data []byte) (int, bool, error) {
 	if exists {
 		v := fmt.Sprintf("%s, %s", v, trimmedVal)
 		h[trimmedLowerKey] = v
-		return idx + 2, false, nil
+	} else {
+		h[trimmedLowerKey] = trimmedVal
 	}
 
-	h[trimmedLowerKey] = trimmedVal
+	// Check whether we have a carrage return right after previous one
+	nextRtn := bytes.Index(data[idx+2:], []byte("\r\n"))
+	if nextRtn == 0 {
+		return idx + 2, true, nil
+	}
 	return idx + 2, false, nil
 }
 

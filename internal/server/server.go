@@ -2,20 +2,32 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"sync/atomic"
 
+	"github.com/2bitburrito/http-implementation/internal/request"
 	"github.com/2bitburrito/http-implementation/internal/response"
 )
 
 type Server struct {
 	listener net.Listener
 	isOpen   *atomic.Bool
+	Handler  Handler
+}
+type HandlerError struct {
+	StatusCode int
+	Err        error
+}
+type Handler func(w io.Writer, req *request.Request) *HandlerError
+
+func (he *HandlerError) Error() string {
+	return fmt.Sprintf("%d error: %s", he.StatusCode, he.Err.Error())
 }
 
-// Serve implements [net.Listener]
-func Serve(port int) (*Server, error) {
+func Serve(port int, hdlr Handler) (*Server, error) {
 	isOpen := atomic.Bool{}
 	isOpen.Store(true)
 
@@ -27,6 +39,7 @@ func Serve(port int) (*Server, error) {
 	server := &Server{
 		listener: listener,
 		isOpen:   &isOpen,
+		Handler:  hdlr,
 	}
 	go server.listen()
 	return server, nil
@@ -47,16 +60,41 @@ func (s *Server) listen() {
 }
 
 func (s *Server) handle(conn net.Conn) {
-	headers := response.GetDefaultHeaders(0)
-	if err := response.WriteStatusLine(conn, 200); err != nil {
+	// Ensure we always close the request with crlf
+	defer func() {
+		defer conn.Close()
+		_, err := fmt.Fprintf(conn, "\r\n")
+		if err != nil {
+			fmt.Println("error while writing crlf to connection: ", err)
+		}
+	}()
+
+	req, err := request.RequestFromReader(conn)
+	if err != nil {
+		fmt.Println("error reading request: ", err)
+	}
+	buf := bytes.NewBuffer(*new([]byte))
+	statusCode := 200
+	if err := s.Handler(buf, req); err != nil {
+		fmt.Println("there was an error in the server handler: ", err.Error())
+		statusCode = err.StatusCode
+	}
+
+	// Writing status line
+	if err := response.WriteStatusLine(conn, response.StatusCode(statusCode)); err != nil {
 		fmt.Println("error while writing status line: ", err)
 		return
 	}
+
+	// Writing headers
+	headers := response.GetDefaultHeaders(buf.Len())
 	if err := response.WriteHeaders(conn, headers); err != nil {
 		fmt.Println("error while writing headers: ", err)
 		return
 	}
-	conn.Close()
+
+	// Writing Body:
+	conn.Write(buf.Bytes())
 }
 
 func (s *Server) Close() {

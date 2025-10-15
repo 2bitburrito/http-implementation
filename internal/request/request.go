@@ -62,29 +62,40 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			}
 			return nil, err
 		}
-		if numberBytesRead == 0 {
-			return nil, fmt.Errorf("only reading 0 bytes")
-		}
 		currReadIdx += numberBytesRead
 
-		numberBytesParsed, err := req.parse(buffer[:currReadIdx])
+		numberBytesParsed, err := req.parseLoop(buffer[:currReadIdx])
 		if err != nil {
 			return nil, fmt.Errorf("error while parsing request: %w", err)
 		}
 
-		// numberBytesParsed is coming back as too long in large body:
 		copy(buffer, buffer[numberBytesParsed:])
 		currReadIdx -= numberBytesParsed
 	}
 	if req.RequestLine.HTTPVersion == "" ||
 		req.RequestLine.Method == "" ||
 		req.RequestLine.RequestTarget == "" {
-		return nil, fmt.Errorf("unknown error while parsing request line")
+		return nil, fmt.Errorf("unknown error while parsing request line: line contains null values: %+v", req.RequestLine)
 	}
 	if len(req.Body) < req.reportedConentLen {
-		return req, fmt.Errorf("body is shorter than content-length")
+		return req, fmt.Errorf("body is shorter than content-length, actual: %d, reported: %d", len(req.Body), req.reportedConentLen)
 	}
 	return req, nil
+}
+
+func (r *Request) parseLoop(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.State != requestStateDone {
+		n, err := r.parse(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		totalBytesParsed += n
+		if n == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
 }
 
 func (r *Request) parse(data []byte) (int, error) {
@@ -113,11 +124,11 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 		return n, nil
 	case requestParsingBody:
-		contentLen, ok := r.Headers.Get("content-length")
+		contentLen, ok := r.Headers.Get("Content-Length")
 		if !ok {
 			r.State = requestStateDone
 			r.reportedConentLen = 0
-			return len(r.Body), nil
+			return 0, nil
 		}
 		lenInt, err := strconv.Atoi(string(contentLen))
 		if err != nil {
@@ -126,7 +137,7 @@ func (r *Request) parse(data []byte) (int, error) {
 		r.reportedConentLen = lenInt
 		r.Body = append(r.Body, data...)
 		if len(r.Body) > lenInt {
-			return len(r.Body), fmt.Errorf("actual body length is longer than reported")
+			return len(r.Body), fmt.Errorf("actual body length is longer than reported, actual: %d, reported: %d", len(r.Body), r.reportedConentLen)
 		}
 		if len(r.Body) == lenInt {
 			r.State = requestStateDone

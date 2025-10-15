@@ -16,7 +16,7 @@ func TestParse(t *testing.T) {
 	require.NotNil(t, headers)
 	assert.Equal(t, "localhost:42069", headers["host"])
 	assert.Equal(t, 23, n)
-	assert.False(t, done)
+	assert.True(t, done)
 
 	// Test: Invalid spacing header
 	headers = NewHeaders()
@@ -32,7 +32,7 @@ func TestParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, 37, n)
-	assert.False(t, done)
+	assert.True(t, done)
 
 	// Test: Valid Done
 	headers = NewHeaders()
@@ -48,7 +48,7 @@ func TestParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, 23, n)
-	assert.False(t, done)
+	assert.True(t, done)
 	assert.Equal(t, headers["host"], "localhost:42069")
 
 	// Test: Invalid header chars
@@ -66,7 +66,7 @@ func TestParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, 13, n)
-	assert.False(t, done)
+	assert.True(t, done)
 	assert.Equal(t, "Mike, Barry", headers["name"])
 
 	// Test: Headers including user-agent
@@ -75,7 +75,7 @@ func TestParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, 25, n)
-	assert.False(t, done)
+	assert.True(t, done)
 	assert.Equal(t, "curl/7.81.0", headers["user-agent"])
 
 	// Test: Headers including accept headers
@@ -84,6 +84,6 @@ func TestParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, 14, n)
-	assert.False(t, done)
+	assert.True(t, done)
 	assert.Equal(t, "/*/*", headers["accept"])
 }
