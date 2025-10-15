@@ -255,4 +255,18 @@ func TestBodyParse(t *testing.T) {
 	r, err = RequestFromReader(reader)
 	require.NoError(t, err)
 	require.NotNil(t, r)
+
+	// Test: with JSON
+	reader = &chunkReader{
+		data: "POST /coffee HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Type: application/json\r\n" +
+			"Content-Length: 63\r\n" +
+			"\r\n" +
+			`{"type": "express", "size": "massive", "blue": "only the best"}`,
+		numBytesPerRead: 3,
+	}
+	r, err = RequestFromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
 }

@@ -18,7 +18,8 @@ type Request struct {
 	Headers           headers.Headers
 	State             RequestState
 	Body              []byte
-	ReportedConentLen int
+	reportedConentLen int
+	totalBodyParsed   int
 }
 
 type RequestState int
@@ -71,6 +72,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, fmt.Errorf("error while parsing request: %w", err)
 		}
 
+		// numberBytesParsed is coming back as too long in large body:
 		copy(buffer, buffer[numberBytesParsed:])
 		currReadIdx -= numberBytesParsed
 	}
@@ -79,7 +81,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		req.RequestLine.RequestTarget == "" {
 		return nil, fmt.Errorf("unknown error while parsing request line")
 	}
-	if len(req.Body) < req.ReportedConentLen {
+	if len(req.Body) < req.reportedConentLen {
 		return req, fmt.Errorf("body is shorter than content-length")
 	}
 	return req, nil
@@ -114,22 +116,23 @@ func (r *Request) parse(data []byte) (int, error) {
 		contentLen, ok := r.Headers.Get("content-length")
 		if !ok {
 			r.State = requestStateDone
-			r.ReportedConentLen = 0
+			r.reportedConentLen = 0
 			return len(r.Body), nil
 		}
 		lenInt, err := strconv.Atoi(string(contentLen))
 		if err != nil {
 			return 0, fmt.Errorf("malformed content length: %s", contentLen)
 		}
-		r.ReportedConentLen = lenInt
+		r.reportedConentLen = lenInt
 		r.Body = append(r.Body, data...)
 		if len(r.Body) > lenInt {
 			return len(r.Body), fmt.Errorf("actual body length is longer than reported")
 		}
 		if len(r.Body) == lenInt {
 			r.State = requestStateDone
-			return lenInt, nil
+			return len(data), nil
 		}
+		r.totalBodyParsed += len(data)
 		return len(data), nil
 	default:
 		return 0, fmt.Errorf("error: trying to read data in an invalid state")

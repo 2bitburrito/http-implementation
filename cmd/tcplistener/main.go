@@ -21,18 +21,19 @@ func main() {
 		}
 		fmt.Printf("Connection Accepted From: %s\n", conn.RemoteAddr())
 
-		request, err := request.RequestFromReader(conn)
+		r, err := request.RequestFromReader(conn)
 		if err != nil {
 			log.Fatal("error reading from connection: ", err)
 		}
 		fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n",
-			request.RequestLine.Method,
-			request.RequestLine.RequestTarget,
-			request.RequestLine.HTTPVersion)
+			r.RequestLine.Method,
+			r.RequestLine.RequestTarget,
+			r.RequestLine.HTTPVersion)
 		fmt.Printf("Headers:\n")
-		for key, value := range request.Headers {
+		for key, value := range r.Headers {
 			fmt.Printf("- %s: %s\n", key, value)
 		}
+		fmt.Printf("Body:\n%s\n", string(r.Body))
 		fmt.Printf("Connection Closed From: %s\n", conn.RemoteAddr())
 	}
 }
