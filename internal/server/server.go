@@ -2,9 +2,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net"
 	"sync/atomic"
 
@@ -17,15 +15,7 @@ type Server struct {
 	isOpen   *atomic.Bool
 	Handler  Handler
 }
-type HandlerError struct {
-	StatusCode int
-	Err        error
-}
-type Handler func(w io.Writer, req *request.Request) *HandlerError
-
-func (he *HandlerError) Error() string {
-	return fmt.Sprintf("%d error: %s", he.StatusCode, he.Err.Error())
-}
+type Handler func(w *response.Writer, req *request.Request)
 
 func Serve(port int, hdlr Handler) (*Server, error) {
 	isOpen := atomic.Bool{}
@@ -73,28 +63,10 @@ func (s *Server) handle(conn net.Conn) {
 	if err != nil {
 		fmt.Println("error reading request: ", err)
 	}
-	buf := bytes.NewBuffer(*new([]byte))
-	statusCode := 200
-	if err := s.Handler(buf, req); err != nil {
-		fmt.Println("there was an error in the server handler: ", err.Error())
-		statusCode = err.StatusCode
+	writer := &response.Writer{
+		Conn: conn,
 	}
-
-	// Writing status line
-	if err := response.WriteStatusLine(conn, response.StatusCode(statusCode)); err != nil {
-		fmt.Println("error while writing status line: ", err)
-		return
-	}
-
-	// Writing headers
-	headers := response.GetDefaultHeaders(buf.Len())
-	if err := response.WriteHeaders(conn, headers); err != nil {
-		fmt.Println("error while writing headers: ", err)
-		return
-	}
-
-	// Writing Body:
-	conn.Write(buf.Bytes())
+	s.Handler(writer, req)
 }
 
 func (s *Server) Close() {

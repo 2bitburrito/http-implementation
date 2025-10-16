@@ -2,16 +2,19 @@ package response
 
 import (
 	"fmt"
-	"io"
+	"net"
 	"strconv"
 
 	"github.com/2bitburrito/http-implementation/internal/headers"
 )
 
 type (
-	Writer     struct{}
 	StatusCode int
 )
+
+type Writer struct {
+	Conn net.Conn
+}
 
 const (
 	OK                  StatusCode = 200
@@ -19,12 +22,11 @@ const (
 	InternalServerError StatusCode = 500
 )
 
-// func (w *Writer) WriteStatusLine(statusCode StatusCode) error
-//
-// func (w *Writer) WriteHeaders(headers headers.Headers) error
-//
-// func (w *Writer) WriteBody(p []byte) (int, error)
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	return fmt.Fprintf(w.Conn, "%v\r\n", p)
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	d := ""
 	switch statusCode {
 	case 200:
@@ -36,7 +38,7 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 	default:
 		return fmt.Errorf("unsupported status code: %q", statusCode)
 	}
-	_, err := w.Write([]byte(d))
+	_, err := w.Conn.Write([]byte(d))
 	if err != nil {
 		return err
 	}
@@ -48,19 +50,40 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	headers := map[string]string{
 		"content-length": contentLenStr,
 		"connection":     "close",
-		"content-type":   "text/plain",
 	}
 	return headers
 }
 
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	for k, v := range headers {
-		_, err := fmt.Fprintf(w, "%s: %s\r\n", k, v)
+		_, err := fmt.Fprintf(w.Conn, "%s: %s\r\n", k, v)
 		if err != nil {
 			return err
 		}
 	}
-	w.Write([]byte("\r\n"))
-	fmt.Println("Finished writing headers")
+	w.Conn.Write([]byte("\r\n"))
 	return nil
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	t := 0
+	n, err := fmt.Fprintf(w.Conn, "%d\r\n", len(p))
+	if err != nil {
+		return t, err
+	}
+	t += n
+	n, err = fmt.Fprintf(w.Conn, "%v\r\n", p)
+	if err != nil {
+		return t, err
+	}
+	t += n
+	return t, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	t, err := fmt.Fprint(w.Conn, "0\r\n\r\n")
+	if err != nil {
+		return 0, err
+	}
+	return t, nil
 }
