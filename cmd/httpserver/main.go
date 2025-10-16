@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/2bitburrito/http-implementation/internal/headers"
 	"github.com/2bitburrito/http-implementation/internal/request"
 	"github.com/2bitburrito/http-implementation/internal/response"
 	"github.com/2bitburrito/http-implementation/internal/server"
@@ -47,7 +49,6 @@ var htmlTemplate string
 func Handler(w *response.Writer, r *request.Request) {
 	pStr := strings.Trim(r.RequestLine.RequestTarget, "/")
 	paths := strings.Split(pStr, "/")
-	fmt.Printf("paths slice: %+v", paths)
 	switch paths[0] {
 	case "yourproblem":
 		handle400(w, r)
@@ -57,6 +58,9 @@ func Handler(w *response.Writer, r *request.Request) {
 
 	case "httpbin":
 		handleHTTPBin(w, r, paths)
+
+	case "video":
+		serveVideo(w, r)
 
 	default:
 		handleDefault(w, r)
@@ -103,11 +107,12 @@ func handle500(w *response.Writer, _ *request.Request) {
 	w.WriteBody(buf.Bytes())
 }
 
-func handleHTTPBin(w *response.Writer, r *request.Request, paths []string) {
-	url := fmt.Sprintf("https://httpbin.org/stream/%s", paths[len(paths)-1])
+func handleHTTPBin(w *response.Writer, _ *request.Request, paths []string) {
+	url := fmt.Sprintf("https://httpbin.org/%s", paths[1])
+	fmt.Println("URL", url)
 	bResp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Bad template execution")
+		fmt.Printf("bad request to: ", url)
 		w.WriteStatusLine(500)
 		return
 	}
@@ -117,9 +122,11 @@ func handleHTTPBin(w *response.Writer, r *request.Request, paths []string) {
 	h := map[string]string{
 		"connection":        "close",
 		"Transfer-Encoding": "chunked",
+		"Trailer":           "X-Content-SHA256, X-Content-Length",
 	}
 	w.WriteHeaders(h)
 
+	totalB := make([]byte, 0, 1024)
 	b := make([]byte, 1024)
 	for {
 		n, err := bResp.Body.Read(b)
@@ -130,10 +137,42 @@ func handleHTTPBin(w *response.Writer, r *request.Request, paths []string) {
 			fmt.Println("error while reading body :", err)
 			return
 		}
-		fmt.Printf("read %d bytes\n", n)
 		w.WriteChunkedBody(b[:n])
+		totalB = append(totalB, b[:n]...)
 	}
 	w.WriteChunkedBodyDone()
+
+	sha := sha256.New()
+	sha.Write(totalB)
+	sum := sha.Sum(nil)
+
+	trailers := headers.Headers{
+		"X-Content-Length": fmt.Sprintf("%d", len(totalB)),
+		"X-Content-SHA256": fmt.Sprintf("%x", sum),
+	}
+	w.WriteTrailers(trailers)
+}
+
+func serveVideo(w *response.Writer, _ *request.Request) {
+	file, err := os.ReadFile("./assets/vim.mp4")
+	if err != nil {
+		fmt.Println("couldn't open file: ", err)
+		return
+	}
+	h := headers.Headers{
+		"connection":     "close",
+		"Content-Type":   "video/mp4",
+		"Content-Length": fmt.Sprintf("%d", len(file)),
+	}
+	w.WriteStatusLine(200)
+	if err := w.WriteHeaders(h); err != nil {
+		fmt.Println("bad writing to headers", err)
+		return
+	}
+	if _, err := w.WriteBody(file); err != nil {
+		fmt.Println("couldn't write body: ", err)
+		return
+	}
 }
 
 func handleDefault(w *response.Writer, _ *request.Request) {

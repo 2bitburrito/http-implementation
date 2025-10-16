@@ -23,7 +23,7 @@ const (
 )
 
 func (w *Writer) WriteBody(p []byte) (int, error) {
-	return fmt.Fprintf(w.Conn, "%v\r\n", p)
+	return w.Conn.Write(p)
 }
 
 func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
@@ -54,8 +54,8 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	return headers
 }
 
-func (w *Writer) WriteHeaders(headers headers.Headers) error {
-	for k, v := range headers {
+func (w *Writer) WriteHeaders(h headers.Headers) error {
+	for k, v := range h {
 		_, err := fmt.Fprintf(w.Conn, "%s: %s\r\n", k, v)
 		if err != nil {
 			return err
@@ -67,12 +67,17 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 
 func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	t := 0
-	n, err := fmt.Fprintf(w.Conn, "%d\r\n", len(p))
+	n, err := fmt.Fprintf(w.Conn, "%x\r\n", len(p))
 	if err != nil {
 		return t, err
 	}
 	t += n
-	n, err = fmt.Fprintf(w.Conn, "%v\r\n", p)
+	n, err = w.Conn.Write(p)
+	if err != nil {
+		return t, err
+	}
+	t += n
+	n, err = w.Conn.Write([]byte("\r\n"))
 	if err != nil {
 		return t, err
 	}
@@ -81,9 +86,20 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	t, err := fmt.Fprint(w.Conn, "0\r\n\r\n")
+	t, err := w.Conn.Write([]byte("0\r\n"))
 	if err != nil {
 		return 0, err
 	}
 	return t, nil
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	for k, v := range h {
+		_, err := fmt.Fprintf(w.Conn, "%s: %s\r\n", k, v)
+		if err != nil {
+			return err
+		}
+	}
+	w.Conn.Write([]byte("\r\n"))
+	return nil
 }
