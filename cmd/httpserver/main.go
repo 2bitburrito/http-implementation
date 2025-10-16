@@ -112,7 +112,7 @@ func handleHTTPBin(w *response.Writer, _ *request.Request, paths []string) {
 	fmt.Println("URL", url)
 	bResp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("bad request to: ", url)
+		fmt.Println("bad request to: ", url)
 		w.WriteStatusLine(500)
 		return
 	}
